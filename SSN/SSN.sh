@@ -20,14 +20,14 @@ SMB_TARGETS_FILE="scope-smb.txt"
 
 # Output files
 TCP_OPEN_PORTS="nmap-tcp-open-ports.txt"
-UDP_OPEN_PORTS="nmap-udp-open-ports.txt"
 TCP_OUTPUT_FILE="nmap-tcp-scan-results.txt"
 UDP_OUTPUT_FILE="nmap-udp-scan-results.txt"
 SMB_OUTPUT_FILE="smb-scan-results.txt"
 
 # Function to show usage
 usage() {
-    echo -e "${YELLOW}Usage: sudo $0 {tcp|udp|smb}${NC}"
+    echo -e "${GREEN}${BOLD}Usage: sudo $0 {all|tcp|udp|smb}${NC}"
+    echo -e "${YELLOW}  all  - Run a TCP, UDP, and SMB scan and perform detailed service version checks${NC}"
     echo -e "${YELLOW}  tcp  - Run a TCP scan and perform detailed service version checks${NC}"
     echo -e "${YELLOW}  udp  - Run a UDP scan and save only the information about open UDP ports${NC}"
     echo -e "${YELLOW}  smb  - Run SMB enumeration using enum4linux and crackmapexec on targets in scope-smb.txt${NC}"
@@ -41,6 +41,7 @@ fi
 
 # Function to print detailed and colorized scan results for TCP/UDP
 print_scan_results() {
+
     local IP="$1"
 
     # Extract and print the relevant information (ports, services, versions)
@@ -52,24 +53,17 @@ print_scan_results() {
         echo "$SCAN_OUTPUT" | awk '/^PORT/ {flag=1; next} /^--/ {flag=0} flag && /tcp/ {print "\t\033[3m" $0 "\033[0m"}'
         echo -e ''
     fi
+
 }
 
-# Clear the output files at the start
-> "$TCP_OPEN_PORTS"
-> "$UDP_OPEN_PORTS"
-> "$TCP_OUTPUT_FILE"
-> "$TCP_OUTPUT_FILE"
-> "$UDP_OUTPUT_FILE"
-> "$SMB_OUTPUT_FILE"
+# Perform TCP scan on the list of IPs
+nmap_tcp_scan() {
 
-if [ "$1" == "tcp" ]; then
-    echo -e "\n${BLUE}Starting TCP scan on ${YELLOW}${BOLD}$TARGETS_FILE${BLUE}.${NC}\n"
-    
-    # Perform TCP scan on the list of IPs
     sudo nmap -iL "$TARGETS_FILE" -sS --min-rate 5000 -p- -Pn --max-retries 1 -oG - | grep '/open/tcp/' > "$TCP_OPEN_PORTS"
 
     # Loop through each line of the grep output to parse IPs and ports
     while IFS= read -r line; do
+
         IP=$(echo "$line" | awk '{print $2}')
         PORTS=$(echo "$line" | grep -oP '\d+/open/tcp' | awk -F'/' '{print $1}' | paste -sd ',' -)
 
@@ -95,14 +89,14 @@ if [ "$1" == "tcp" ]; then
         else
             echo -e "${RED}No open TCP ports found on ${YELLOW}${BOLD}$IP${NC}"
         fi
+        
     done < "$TCP_OPEN_PORTS"
 
-    echo -e "${GREEN}${BOLD}TCP scan complete. Results saved in ${YELLOW}${BOLD}$TCP_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
+}
 
-elif [ "$1" == "udp" ]; then
-    echo -e "\n${BLUE}Starting UDP scan on ${YELLOW}${BOLD}$TARGETS_FILE${BLUE}.${NC}\n"
+# Perform UDP scan on the list of IPs
+nmap_udp_scan(){
 
-    # Perform UDP scan on the list of IPs
     while IFS= read -r ip; do
         
         echo -e "${MAGENTA}Performing UDP scan on ${YELLOW}${BOLD}$ip${MAGENTA}...${NC}"
@@ -115,14 +109,19 @@ elif [ "$1" == "udp" ]; then
         # Save full scan output to the final file
         echo "$SCAN_OUTPUT" >> "$UDP_OUTPUT_FILE"
         echo -e "\n-------------------------------\n" >> "$UDP_OUTPUT_FILE"
+
     done < "$TARGETS_FILE"
 
-    echo -e "${GREEN}${BOLD}UDP scan complete. Results saved in ${YELLOW}${BOLD}$UDP_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
+}
 
-elif [ "$1" == "smb" ]; then
-    echo -e "\n${BLUE}Starting SMB scan on ${YELLOW}${BOLD}$SMB_TARGETS_FILE${BLUE}.${NC}\n"
+# Loop through each IP in the smb targets file
+smb_scan(){
 
-    # Loop through each IP in the smb targets file
+    if [ -z "$(echo "$SMB_TARGETS_FILE")" ]; then
+        echo -e "${RED}No open TCP/445 ports found.${NC}"
+        return
+    fi
+
     while IFS= read -r ip; do
 
         echo -e "${MAGENTA}Running enum4linux on ${YELLOW}${BOLD}${ip}${MAGENTA}...${NC}\n"
@@ -135,9 +134,40 @@ elif [ "$1" == "smb" ]; then
         echo "$SCAN_OUTPUT"
         echo "$SCAN_OUTPUT" >> "$SMB_OUTPUT_FILE"
 
-        echo -e "${NC}--------------------------------------${NC}"
     done < "$SMB_TARGETS_FILE"
 
+}
+
+# Clear the output files at the start
+> "$TCP_OPEN_PORTS"
+> "$TCP_OUTPUT_FILE"
+> "$TCP_OUTPUT_FILE"
+> "$UDP_OUTPUT_FILE"
+> "$SMB_OUTPUT_FILE"
+
+if [ "$1" == "tcp" ]; then
+    echo -e "\n${BLUE}Starting TCP scan on ${YELLOW}${BOLD}$TARGETS_FILE${BLUE}.${NC}\n"
+    nmap_tcp_scan 
+    echo -e "${GREEN}${BOLD}TCP scan complete. Results saved in ${YELLOW}${BOLD}$TCP_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
+elif [ "$1" == "udp" ]; then
+    echo -e "\n${BLUE}Starting UDP scan on ${YELLOW}${BOLD}$TARGETS_FILE${BLUE}.${NC}\n"
+    nmap_udp_scan
+    echo -e "${GREEN}${BOLD}UDP scan complete. Results saved in ${YELLOW}${BOLD}$UDP_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
+elif [ "$1" == "smb" ]; then
+    echo -e "\n${BLUE}Starting SMB scan on ${YELLOW}${BOLD}$SMB_TARGETS_FILE${BLUE}.${NC}\n"
+    smb_scan
+    echo -e "${GREEN}${BOLD}SMB scan complete. Results saved in ${YELLOW}${BOLD}$SMB_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
+elif [ "$1" == "all" ]; then
+    echo -e "\n${BLUE}Starting TCP scan on ${YELLOW}${BOLD}$TARGETS_FILE${BLUE}.${NC}\n"
+    nmap_tcp_scan 
+    echo -e "${GREEN}${BOLD}TCP scan complete. Results saved in ${YELLOW}${BOLD}$TCP_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
+
+    echo -e "\n${BLUE}Starting UDP scan on ${YELLOW}${BOLD}$TARGETS_FILE${BLUE}.${NC}\n"
+    nmap_udp_scan
+    echo -e "${GREEN}${BOLD}UDP scan complete. Results saved in ${YELLOW}${BOLD}$UDP_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
+
+    echo -e "\n${BLUE}Starting SMB scan on ${YELLOW}${BOLD}$SMB_TARGETS_FILE${BLUE}.${NC}\n"
+    smb_scan
     echo -e "${GREEN}${BOLD}SMB scan complete. Results saved in ${YELLOW}${BOLD}$SMB_OUTPUT_FILE${GREEN}${BOLD}.${NC}"
 else
     usage
