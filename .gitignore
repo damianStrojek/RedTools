@@ -1,0 +1,6 @@
+# Results of the tests
+smb-scan-results.txt
+nmap-tcp-scan-results.txt
+nmap-tcp-open-ports.txt
+nmap-udp-scan-results.txt
+nmap-udp-open-ports.txt
